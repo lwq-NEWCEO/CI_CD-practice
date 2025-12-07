@@ -1,0 +1,58 @@
+name: Docker Build and Push
+
+on:
+  push:
+    branches: [ "main" ] # 当推送到 main 分支时触发
+
+# 设置权限，允许 GITHUB_TOKEN 读取代码库并写入 Packages
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # 任务1：测试代码
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Run tests
+        run: npm test
+
+  # 任务2：构建 Docker 镜像并推送到 GitHub Container Registry (GHCR)
+  build-and-push:
+    needs: test # 依赖关系：只有 test 任务成功，才会运行此任务
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 设置 Docker Buildx (用于构建镜像)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 登录到 GitHub Container Registry
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 构建并推送镜像
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 这里的标签使用了 repository_owner 变量，会自动填入你的用户名
+          tags: ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest
