@@ -47,11 +47,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+          
       # 构建并推送镜像
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ghcr.io/lwq-newceo/ci-cd-practice:latest
+          # 使用多行字符串符号 (|)，同时打两个标签
+          tags: |
+            ghcr.io/lwq-newceo/ci-cd-practice:latest
+            ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
+        
