@@ -9,30 +9,32 @@ permissions:
   packages: write
 
 jobs:
-  test-and-lint:
+  # 只保留原来就能跑通的结构，把 Lint 加进来
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-
+          
       - name: Install dependencies
-        run: npm ci
+        run: npm ci                  # 原来你写 npm install 也可以，改成 ci 更稳
 
-      - name: Run ESLint
+      # 新增 Lint，但先让它不挡路（等全绿后再严格）
+      - name: Run Lint
         run: npx eslint .
-        continue-on-error: true     # 重点！！！先让它不挡路
+        continue-on-error: true      # 关键一行！先让 CI 绿起来
 
       - name: Run tests
         run: npm test
 
   build-and-push:
-    needs: test-and-lint
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -41,13 +43,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+          
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -56,3 +58,5 @@ jobs:
           tags: |
             ghcr.io/lwq-newceo/ci-cd-practice:latest
             ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
+
+     
