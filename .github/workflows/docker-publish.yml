@@ -58,4 +58,18 @@ jobs:
           tags: |
             ghcr.io/lwq-newceo/ci-cd-practice:latest
             ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
-        
+            
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+
+      # 新增：代码规范检查
+      - name: Run Lint
+        run: npm run lint
+      
+      - name: Run tests
+        run: npm test
