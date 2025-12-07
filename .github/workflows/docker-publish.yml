@@ -55,4 +55,4 @@ jobs:
           context: .
           push: true
           # 这里的标签使用了 repository_owner 变量，会自动填入你的用户名
-          tags: ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest
+          tags: ghcr.io/lwq-newceo/ci-cd-practice:latest
