@@ -19,14 +19,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          # 删掉了 cache: 'npm'，防止因为缺少 package-lock.json 报错
           
       - name: Install dependencies
-        run: npm install             # 改回 npm install，防止因为缺少 lock 文件报错
+        run: npm install
 
       - name: Run Lint
         run: npx eslint .
-        continue-on-error: true      # 即使 Lint 报错也不中断，先保证跑通
+        continue-on-error: true
 
       - name: Run tests
         run: npm test
@@ -56,3 +55,47 @@ jobs:
           tags: |
             ghcr.io/lwq-newceo/ci-cd-practice:latest
             ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
+
+      # ==== 新增：钉钉通知步骤（加签版 - 终极修复版） ====
+      # 使用 jq 生成 JSON，彻底解决了 YAML 缩进与 EOF 的冲突问题
+      - name: DingTalk Notification
+        if: always()
+        env:
+          DINGTALK_URL: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_WEBHOOK_SECRET }}
+        run: |
+          # 1. 准备基础信息
+          STATUS_MESSAGE="构建失败"
+          COLOR="#FF0000" # 红色
+          if [ "${{ job.status }}" == "success" ]; then
+            STATUS_MESSAGE="构建成功"
+            COLOR="#008000" # 绿色
+          fi
+          
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f 2)
+          COMMIT_MESSAGE=$(echo "${{ github.event.head_commit.message }}" | tr -d '"')
+          
+          # 2. 钉钉加签计算 (HMAC-SHA256)
+          timestamp=$(date +%s%3N)
+          string_to_sign="${timestamp}\n${DINGTALK_SECRET}"
+          sign=$(echo -n "${string_to_sign}" | openssl dgst -sha256 -hmac "${DINGTALK_SECRET}" -binary | base64 | tr -d '\n' | sed 's/=/%3D/g' | sed 's/\//%2F/g' | sed 's/+/%2B/g')
+          
+          FINAL_URL="${DINGTALK_URL}&timestamp=${timestamp}&sign=${sign}"
+          
+          # 3. 准备消息内容文本
+          MARKDOWN_TEXT="### CI/CD 流水线通知\n\n- **状态:** <font color='${COLOR}'>${STATUS_MESSAGE}</font>\n- **仓库:** ${REPO_NAME}\n- **提交:** [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n- **消息:** ${COMMIT_MESSAGE}\n- **运行:** [查看详情](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          
+          # 4. 使用 jq 生成 JSON 文件 (避开 EOF 语法坑)
+          jq -n \
+            --arg title "CI/CD 流水线 ${STATUS_MESSAGE}" \
+            --arg text "$MARKDOWN_TEXT" \
+            '{
+              msgtype: "markdown",
+              markdown: {
+                title: $title,
+                text: $text
+              }
+            }' > payload.json
+          
+          # 5. 发送请求
+          curl -X POST -H "Content-Type: application/json" -d @payload.json "${FINAL_URL}"
