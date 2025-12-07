@@ -69,7 +69,7 @@ jobs:
 
       # 新增：代码规范检查
       - name: Run Lint
-        run: npm run lint
+        run: npx eslint .
       
       - name: Run tests
         run: npm test
