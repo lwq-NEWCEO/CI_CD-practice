@@ -23,30 +23,18 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # ==== 新增步骤：现场生成 ESLint 配置文件 ====
-      # 防止因为没上传 .eslintrc.json 导致报错
+      # 现场生成 ESLint 配置文件
       - name: Create ESLint config
         run: |
           echo '{
-            "env": {
-              "browser": true,
-              "commonjs": true,
-              "es2021": true,
-              "node": true
-            },
+            "env": { "browser": true, "commonjs": true, "es2021": true, "node": true },
             "extends": "eslint:recommended",
-            "parserOptions": {
-              "ecmaVersion": "latest"
-            },
-            "rules": {
-              "no-unused-vars": "warn"
-            }
+            "rules": { "no-unused-vars": "warn" }
           }' > .eslintrc.json
 
       - name: Run Lint
-        # 使用 v8 版本，配合上面生成的 json 配置文件
         run: npx eslint@8 .
-        continue-on-error: true  # 即使代码风格不规范，也先允许通过
+        continue-on-error: true
 
       - name: Run tests
         run: npm test
@@ -77,13 +65,22 @@ jobs:
             ghcr.io/lwq-newceo/ci-cd-practice:latest
             ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
 
-      # ==== 钉钉通知（使用 jq 修复版） ====
+      # ==== 钉钉通知（变量名统一修复版） ====
       - name: DingTalk Notification
         if: always()
         env:
-          DINGTALK_URL: ${{ secrets.DINGTALK_WEBHOOK }}
-          DINGTALK_SECRET: ${{ secrets.DINGTALK_WEBHOOK_SECRET }}
+          # 左边是脚本内部用的名字，右边是 GitHub Secrets 的名字
+          # 必须严格对应！
+          DT_URL: ${{ secrets.DINGTALK_WEBHOOK }}
+          DT_SECRET: ${{ secrets.DINGTALK_WEBHOOK_SECRET }}
         run: |
+          # 0. 检查 Secret 是否注入成功 (调试用，只打印长度，不打印内容)
+          if [ -z "$DT_SECRET" ]; then
+            echo "Error: DT_SECRET is empty! Check your secrets setting."
+            exit 1
+          fi
+          
+          # 1. 准备消息状态
           STATUS_MESSAGE="构建失败"
           COLOR="#FF0000"
           if [ "${{ job.status }}" == "success" ]; then
@@ -94,12 +91,17 @@ jobs:
           REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f 2)
           COMMIT_MESSAGE=$(echo "${{ github.event.head_commit.message }}" | tr -d '"')
           
+          # 2. 签名计算 (使用 DT_SECRET)
           timestamp=$(date +%s%3N)
-          string_to_sign="${timestamp}\n${DINGTALK_SECRET}"
-          sign=$(echo -n "${string_to_sign}" | openssl dgst -sha256 -hmac "${DINGTALK_SECRET}" -binary | base64 | tr -d '\n' | sed 's/=/%3D/g' | sed 's/\//%2F/g' | sed 's/+/%2B/g')
+          string_to_sign="${timestamp}\n${DT_SECRET}"
           
-          FINAL_URL="${DINGTALK_URL}&timestamp=${timestamp}&sign=${sign}"
+          # 注意：这里使用的是 $DT_SECRET
+          sign=$(echo -n "${string_to_sign}" | openssl dgst -sha256 -hmac "${DT_SECRET}" -binary | base64 | tr -d '\n' | sed 's/=/%3D/g;s/\//%2F/g;s/+/%2B/g')
           
+          # 3. 拼接 URL (使用 DT_URL)
+          FINAL_URL="${DT_URL}&timestamp=${timestamp}&sign=${sign}"
+          
+          # 4. 生成 JSON
           MARKDOWN_TEXT="### CI/CD 流水线通知\n\n- **状态:** <font color='${COLOR}'>${STATUS_MESSAGE}</font>\n- **仓库:** ${REPO_NAME}\n- **提交:** [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n- **消息:** ${COMMIT_MESSAGE}\n- **运行:** [查看详情](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           
           jq -n \
@@ -113,4 +115,5 @@ jobs:
               }
             }' > payload.json
           
+          # 5. 发送请求
           curl -X POST -H "Content-Type: application/json" -d @payload.json "${FINAL_URL}"
