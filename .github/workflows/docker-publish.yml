@@ -9,7 +9,6 @@ permissions:
   packages: write
 
 jobs:
-  # 只保留原来就能跑通的结构，把 Lint 加进来
   test:
     runs-on: ubuntu-latest
     steps:
@@ -20,15 +19,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
+          # 删掉了 cache: 'npm'，防止因为缺少 package-lock.json 报错
           
       - name: Install dependencies
-        run: npm ci                  # 原来你写 npm install 也可以，改成 ci 更稳
+        run: npm install             # 改回 npm install，防止因为缺少 lock 文件报错
 
-      # 新增 Lint，但先让它不挡路（等全绿后再严格）
       - name: Run Lint
         run: npx eslint .
-        continue-on-error: true      # 关键一行！先让 CI 绿起来
+        continue-on-error: true      # 即使 Lint 报错也不中断，先保证跑通
 
       - name: Run tests
         run: npm test
@@ -58,5 +56,3 @@ jobs:
           tags: |
             ghcr.io/lwq-newceo/ci-cd-practice:latest
             ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
-
-     
