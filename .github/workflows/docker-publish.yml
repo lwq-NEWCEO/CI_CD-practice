@@ -19,13 +19,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          # 删掉了 cache: 'npm'，防止因为缺少 package-lock.json 报错
           
       - name: Install dependencies
-        run: npm install
+        run: npm install             # 改回 npm install，防止因为缺少 lock 文件报错
 
       - name: Run Lint
         run: npx eslint .
-        continue-on-error: true
+        continue-on-error: true      # 即使 Lint 报错也不中断，先保证跑通
 
       - name: Run tests
         run: npm test
@@ -55,50 +56,3 @@ jobs:
           tags: |
             ghcr.io/lwq-newceo/ci-cd-practice:latest
             ghcr.io/lwq-newceo/ci-cd-practice:${{ github.sha }}
-
-      # ==== 新增：钉钉通知步骤（已开启加签版） ====
-      - name: DingTalk Notification
-        if: always() # 确保无论成功失败都会运行
-        env:
-          DINGTALK_URL: ${{ secrets.DINGTALK_WEBHOOK }} # 存储完整的 URL
-          DINGTALK_SECRET: ${{ secrets.DINGTALK_WEBHOOK_SECRET }} # 存储 Secret
-        run: |
-          STATUS_MESSAGE="构建失败"
-          if [ "${{ job.status }}" == "success" ]; then
-            STATUS_MESSAGE="构建成功"
-          fi
-          
-          REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f 2)
-          COMMIT_MESSAGE=$(echo "${{ github.event.head_commit.message }}" | tr -d '"')
-          
-          # 生成时间戳（毫秒）
-          timestamp=$(date +%s%3N) # %3N 表示毫秒
-          
-          # 拼接用于签名的字符串
-          string_to_sign="${timestamp}\n${DINGTALK_SECRET}"
-          
-          # 计算 HMAC-SHA256 签名，并进行 Base64 + URL 编码
-          sign=$(echo -n "${string_to_sign}" | openssl dgst -sha256 -hmac "${DINGTALK_SECRET}" -binary | base64 | tr -d '\n' | sed 's/=/%3D/g' | sed 's/\//%2F/g' | sed 's/+/%2B/g')
-          
-          # 拼接最终的 Webhook URL，包含 timestamp 和 sign 参数
-          DINGTALK_WEBHOOK_FINAL_URL="${DINGTALK_URL}&timestamp=${timestamp}&sign=${sign}"
-          
-          # 构建 POST 请求的 JSON 数据 (支持 Markdown)
-          JSON_DATA=$(cat <<EOF
-          {
-            "msgtype": "markdown",
-            "markdown": {
-              "title": "CI/CD 流水线 ${STATUS_MESSAGE}",
-              "text": "### CI/CD 流水线通知\n\n"
-                    + "- **状态:** <font color='${{ job.status == \"success\" && \"#008000\" || \"#FF0000\" }}'>${STATUS_MESSAGE}</font>\n"
-                    + "- **仓库:** ${REPO_NAME}\n"
-                    + "- **提交:** [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n"
-                    + "- **消息:** ${COMMIT_MESSAGE}\n"
-                    + "- **运行:** [查看详情](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-            }
-          }
-EOF
-)
-          
-          curl -X POST -H "Content-Type: application/json" -d "${JSON_DATA}" "${DINGTALK_WEBHOOK_FINAL_URL}"
-
